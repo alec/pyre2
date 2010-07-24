@@ -193,9 +193,10 @@ cdef class Match:
 
 
 cdef class Pattern:
-    cdef _re2.RE2 * pattern
+    cdef _re2.RE2 * re_pattern
     cdef int ngroups
     cdef bint encoded
+    cdef public object pattern
 
     cdef _search(self, string, int pos, int endpos, _re2.re2_Anchor anchoring):
         """
@@ -219,14 +220,14 @@ cdef class Pattern:
 
         sp = new _re2.StringPiece(cstring, size)
         with nogil:
-            result = self.pattern.Match(sp[0], <int>pos, anchoring, matches, self.ngroups + 1)
+            result = self.re_pattern.Match(sp[0], <int>pos, anchoring, matches, self.ngroups + 1)
 
         del sp
         if result == 0:
             return None
         m.matches = matches
         m.encoded = <bint>(encoded) or self.encoded
-        m.named_groups = _re2.addressof(self.pattern.NamedCapturingGroups())
+        m.named_groups = _re2.addressof(self.re_pattern.NamedCapturingGroups())
         m.nmatches = self.ngroups + 1
         m.match_string = string
         return m
@@ -248,7 +249,7 @@ cdef class Pattern:
 
     cdef _print_pattern(self):
         cdef _re2.cpp_string * s
-        s = <_re2.cpp_string *>_re2.addressofs(self.pattern.pattern())
+        s = <_re2.cpp_string *>_re2.addressofs(self.re_pattern.pattern())
         print cpp_to_pystring(s[0]) + "\n"
         sys.stdout.flush()
 
@@ -281,7 +282,7 @@ cdef class Pattern:
         while True:
             with nogil:
                 matches = _re2.new_StringPiece_array(self.ngroups + 1)
-                result = self.pattern.Match(sp[0], <int>pos, _re2.UNANCHORED, matches, self.ngroups + 1)
+                result = self.re_pattern.Match(sp[0], <int>pos, _re2.UNANCHORED, matches, self.ngroups + 1)
             if result == 0:
                 break
             # offset the pos to move to the next point
@@ -289,7 +290,7 @@ cdef class Pattern:
             m = Match()
             m.encoded = encoded
             m.matches = matches
-            m.named_groups = _re2.addressof(self.pattern.NamedCapturingGroups())
+            m.named_groups = _re2.addressof(self.re_pattern.NamedCapturingGroups())
             m.nmatches = self.ngroups + 1
             m.match_string = string
             m.init_groups()
@@ -347,7 +348,7 @@ cdef class Pattern:
 
         while True:
             with nogil:
-                result = self.pattern.Match(sp[0], <int>pos, _re2.UNANCHORED, matches, num_groups)
+                result = self.re_pattern.Match(sp[0], <int>pos, _re2.UNANCHORED, matches, num_groups)
             if result == 0:
                 break
 
@@ -412,11 +413,11 @@ cdef class Pattern:
         input_str = new _re2.cpp_string(string)
         if not count:
             total_replacements = _re2.pattern_GlobalReplace(input_str,
-                                                            self.pattern[0],
+                                                            self.re_pattern[0],
                                                             sp[0])
         elif count == 1:
             total_replacements = _re2.pattern_Replace(input_str,
-                                                      self.pattern[0],
+                                                      self.re_pattern[0],
                                                       sp[0])
         else:
             raise NotImplementedError("So far pyre2 does not support custom replacement counts")
@@ -456,7 +457,7 @@ cdef class Pattern:
         while True:
             with nogil:
                 matches = _re2.new_StringPiece_array(self.ngroups + 1)
-                result = self.pattern.Match(sp[0], <int>pos, _re2.UNANCHORED, matches, self.ngroups + 1)
+                result = self.re_pattern.Match(sp[0], <int>pos, _re2.UNANCHORED, matches, self.ngroups + 1)
             if result == 0:
                 break
 
@@ -470,7 +471,7 @@ cdef class Pattern:
             m = Match()
             m.encoded = encoded
             m.matches = matches
-            m.named_groups = _re2.addressof(self.pattern.NamedCapturingGroups())
+            m.named_groups = _re2.addressof(self.re_pattern.NamedCapturingGroups())
             m.nmatches = self.ngroups + 1
             m.match_string = string
             m.init_groups()
@@ -505,6 +506,8 @@ def compile(pattern, int flags=0):
 
     if isinstance(pattern, Pattern):
         return pattern
+
+    cdef object original_pattern = pattern
 
     cdef str strflags = ''
     # Set the options given the flags above.
@@ -552,7 +555,8 @@ def compile(pattern, int flags=0):
         return re.compile(pattern, flags)
 
     cdef Pattern pypattern = Pattern()
-    pypattern.pattern = re_pattern
+    pypattern.pattern = original_pattern
+    pypattern.re_pattern = re_pattern
     pypattern.ngroups = re_pattern.NumberOfCapturingGroups()
     pypattern.encoded = <bint>encoded
     del s
