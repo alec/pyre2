@@ -303,10 +303,10 @@ cdef class Pattern:
         of strings.
         """
         def chooser(Match match):
-            if match.nmatches > 1:
+            if match.nmatches > 2:
                 return match.groups()
             else:
-                return match.group(0)
+                return match.group(match.nmatches - 1)
         return map(chooser, self.finditer(string, pos, endpos))
 
 
